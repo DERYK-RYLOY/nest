@@ -1,0 +1,19 @@
+NEST File Organizer — Proprietary License
+
+Copyright (c) 2026 DERYK RYLOY. All rights reserved.
+
+The source code in this repository is made visible for transparency,
+review and learning. All rights remain exclusively with the author.
+
+You MAY:
+- read, study and reference this code;
+- build it for your own personal use.
+
+You MAY NOT, without prior written permission from the author:
+- redistribute the source, modified or unmodified;
+- redistribute compiled binaries, except by linking to the official
+  NEST releases (https://github.com/DERYK-RYLOY/nest/releases);
+- sell, rent, lease or sublicense NEST or derivative works;
+- remove or alter copyright and attribution notices.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
