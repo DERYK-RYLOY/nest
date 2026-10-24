@@ -32,6 +32,10 @@ export default function Dashboard({
       : data.schedule?.instant
         ? 'sorts new downloads'
         : 'manual only';
+  const sourceHint =
+    data.sources.length > 1
+      ? `${data.sources.length} folders`
+      : shortPath(data.sources[0] ?? '—');
 
   const stats = [
     {
@@ -39,7 +43,7 @@ export default function Dashboard({
       warm: false,
       label: 'In source',
       value: String(data.downloadsCount),
-      hint: shortPath(data.sources[0] ?? '—'),
+      hint: sourceHint,
     },
     {
       icon: 'clock',

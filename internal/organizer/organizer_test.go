@@ -94,6 +94,48 @@ func TestCustomRules(t *testing.T) {
 	}
 }
 
+func TestMoveFileNeverOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	if err := os.WriteFile(src, []byte("source"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := moveFile(src, dst); err == nil {
+		t.Fatal("moveFile replaced an existing destination")
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "keep" {
+		t.Errorf("destination was modified: %q", b)
+	}
+	if b, _ := os.ReadFile(src); string(b) != "source" {
+		t.Errorf("source was removed after a failed move: %q", b)
+	}
+}
+
+func TestDryRunReportsFinalCollisionName(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, "arc", ".zip", 1)
+	if err := os.MkdirAll(filepath.Join(dir, "_Archives"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "_Archives", "arca.zip"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := Run(Options{Source: dir, Apply: false, MinAgeSeconds: 0, MinCluster: 3})
+
+	if len(rep.Moves) != 1 {
+		t.Fatalf("want 1 planned move, got %d", len(rep.Moves))
+	}
+	if got := filepath.Base(rep.Moves[0].To); got != "arca (1).zip" {
+		t.Errorf("preview should show the collision-free name, got %q", got)
+	}
+}
+
 func TestRunDryRunMovesNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, "arc", ".zip", 5)

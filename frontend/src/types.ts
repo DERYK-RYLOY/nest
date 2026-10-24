@@ -24,11 +24,20 @@ export interface Move {
 
 export interface RunRecord {
   id: string;
+  runId?: string;
   timestamp: string;
   source: string;
   moves: Move[];
   bytes: number;
   undone: boolean;
+}
+
+export interface UndoResult {
+  runId: string;
+  records: number;
+  moves: number;
+  bytes: number;
+  missing: number;
 }
 
 export interface ScheduleStatus {

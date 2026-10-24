@@ -58,12 +58,12 @@ export function RunOrganize() {
   return window['go']['main']['App']['RunOrganize']();
 }
 
-export function SaveConfig(arg1) {
-  return window['go']['main']['App']['SaveConfig'](arg1);
+export function SaveAutomation(arg1) {
+  return window['go']['main']['App']['SaveAutomation'](arg1);
 }
 
-export function SaveSchedule(arg1, arg2) {
-  return window['go']['main']['App']['SaveSchedule'](arg1, arg2);
+export function SaveConfig(arg1) {
+  return window['go']['main']['App']['SaveConfig'](arg1);
 }
 
 export function UndoLast() {

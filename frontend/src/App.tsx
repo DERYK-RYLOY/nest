@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon';
 import Dashboard from './views/Dashboard';
 import Categories from './views/Categories';
@@ -6,7 +6,7 @@ import Scheduler from './views/Scheduler';
 import History from './views/History';
 import * as api from '../wailsjs/go/main/App';
 import { config as models } from '../wailsjs/go/models';
-import type { AboutInfo, AppConfig, DashboardData, Report, RunRecord } from './types';
+import type { AboutInfo, AppConfig, DashboardData, Report, RunRecord, UndoResult } from './types';
 import { formatBytes, baseName, shortPath } from './utils';
 import pouch from './assets/brand/pouch-128.png';
 import pouchBig from './assets/brand/pouch-256.png';
@@ -38,28 +38,39 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [report, setReport] = useState<Report[] | null>(null);
   const [welcome, setWelcome] = useState(false);
+  const toastTimer = useRef<number | undefined>(undefined);
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(''), 3400);
+    // A newer message must not be erased by the previous message's timer.
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(''), 3400);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
   }, []);
 
   const refresh = useCallback(async () => {
-    const [d, c, h, ab] = await Promise.all([
-      api.GetDashboard(),
-      api.GetConfig(),
-      api.GetHistory(),
-      api.GetAbout(),
-    ]);
-    setData(d as unknown as DashboardData);
-    setCfg(c as unknown as AppConfig);
-    setHistory((h as unknown as RunRecord[]) ?? []);
-    setAbout(ab as unknown as AboutInfo);
-    const runs = (h as unknown as RunRecord[]) ?? [];
-    if (runs.length === 0 && !window.localStorage.getItem('nest-welcomed')) {
-      setWelcome(true);
+    try {
+      const [d, c, h, ab] = await Promise.all([
+        api.GetDashboard(),
+        api.GetConfig(),
+        api.GetHistory(),
+        api.GetAbout(),
+      ]);
+      setData(d as unknown as DashboardData);
+      setCfg(c as unknown as AppConfig);
+      setHistory((h as unknown as RunRecord[]) ?? []);
+      setAbout(ab as unknown as AboutInfo);
+      const runs = (h as unknown as RunRecord[]) ?? [];
+      if (runs.length === 0 && !window.localStorage.getItem('nest-welcomed')) {
+        setWelcome(true);
+      }
+    } catch (e) {
+      notify('Could not load NEST data: ' + String(e));
     }
-  }, []);
+  }, [notify]);
 
   useEffect(() => {
     refresh();
@@ -105,12 +116,16 @@ export default function App() {
       const r = (await api.RunOrganize()) as unknown as Report[];
       const moved = r.reduce((n, x) => n + x.moved, 0);
       const young = r.reduce((n, x) => n + (x.skippedYoung ?? 0), 0);
+      const errors = r.flatMap((x) => x.errors ?? []);
+      const failed = errors.length ? ` · ${errors.length} could not be moved` : '';
       notify(
         moved
-          ? `Organized ${moved} file(s). NEST is now idle.`
+          ? `Organized ${moved} file(s)${failed}. NEST is now idle.`
           : young
             ? `${young} file(s) still downloading — try again shortly.`
-            : 'Nothing to organize.',
+            : errors.length
+              ? `Could not move ${errors.length} file(s): ${errors[0]}`
+              : 'Nothing to organize.',
       );
       await refresh();
     } catch (e) {
@@ -122,11 +137,13 @@ export default function App() {
 
   const onUndo = async () => {
     try {
-      const rec = (await api.UndoLast()) as unknown as RunRecord;
-      notify(`Reverted ${rec?.moves?.length ?? 0} file(s)`);
+      const res = (await api.UndoLast()) as unknown as UndoResult;
+      const gone = res.missing ? ` · ${res.missing} already gone` : '';
+      notify(`Reverted ${res.moves} file(s)${gone}`);
       await refresh();
-    } catch {
-      notify('Nothing to undo');
+    } catch (e) {
+      const msg = String(e);
+      notify(msg.includes('does not exist') ? 'Nothing to undo' : 'Undo failed: ' + msg);
     }
   };
 
@@ -216,7 +233,13 @@ export default function App() {
 
         <div className="content">
           {page === 'dashboard' && (
-            <Dashboard data={data} history={history} onOpen={(p) => api.OpenFolder(p)} />
+            <Dashboard
+              data={data}
+              history={history}
+              onOpen={(p) => {
+                api.OpenFolder(p).catch(() => notify('That folder is no longer there.'));
+              }}
+            />
           )}
           {page === 'categories' && cfg && (
             <Categories
@@ -353,8 +376,8 @@ function PreviewModal({
                     <span style={{ flex: 1 }}>{shortPath(m.to)}</span>
                     <button
                       className="icon-btn"
-                      title="Reveal in Explorer"
-                      onClick={() => onReveal(m.to)}
+                      title="Reveal the original file in Explorer"
+                      onClick={() => onReveal(m.from)}
                     >
                       <Icon name="folder" size={14} />
                     </button>

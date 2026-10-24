@@ -12,6 +12,19 @@ const PRESETS: { label: string; times: string[] }[] = [
   { label: 'Thrice · 8 · 1 · 7', times: ['08:00', '13:00', '19:00'] },
 ];
 
+// The fields this page owns. Theme and category rules are edited elsewhere and
+// are always taken from the freshest config when saving.
+function editable(c: AppConfig): string {
+  return JSON.stringify([
+    c.times,
+    c.instant,
+    c.instantDelay,
+    c.sources,
+    c.minCluster,
+    c.minAgeSeconds,
+  ]);
+}
+
 export default function Scheduler({
   cfg,
   about,
@@ -30,48 +43,19 @@ export default function Scheduler({
   const [saving, setSaving] = useState(false);
 
   const patch = (p: Partial<AppConfig>) => setDraft((d) => ({ ...d, ...p }));
+  const dirty = editable(draft) !== editable(cfg);
 
   const addTime = () => {
-    if (!/^\d{2}:\d{2}$/.test(newTime)) return;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime)) {
+      notify('Pick a valid time first');
+      return;
+    }
     if (!draft.times.includes(newTime)) {
       patch({ times: [...draft.times, newTime].sort() });
     }
   };
 
   const removeTime = (t: string) => patch({ times: draft.times.filter((x) => x !== t) });
-
-  const saveSchedule = async () => {
-    setSaving(true);
-    try {
-      await api.SaveSchedule(draft.times, draft.instant);
-      await onSaved();
-      const n = draft.times.length;
-      notify(
-        n === 0 && !draft.instant
-          ? 'Automation off — manual mode.'
-          : n === 0
-            ? 'Instant mode on. Daily schedule off.'
-            : `Registered ${n} daily run${n > 1 ? 's' : ''}: ${draft.times.join(', ')}`,
-      );
-    } catch (e) {
-      notify('Could not update automation (try running NEST as administrator once): ' + String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveSettings = async () => {
-    setSaving(true);
-    try {
-      await api.SaveConfig(models.Config.createFrom(draft));
-      await onSaved();
-      notify('Settings saved');
-    } catch (e) {
-      notify('Could not save settings: ' + String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const restartAdmin = async () => {
     try {
@@ -84,9 +68,12 @@ export default function Scheduler({
   const addSource = async () => {
     try {
       const p = (await api.PickFolder()) as unknown as string;
-      if (p && !draft.sources.includes(p)) {
-        patch({ sources: [...draft.sources, p] });
+      if (!p) return;
+      if (draft.sources.includes(p)) {
+        notify('That folder is already watched');
+        return;
       }
+      patch({ sources: [...draft.sources, p] });
     } catch {
       /* cancelled */
     }
@@ -94,9 +81,57 @@ export default function Scheduler({
 
   const removeSource = (p: string) => patch({ sources: draft.sources.filter((s) => s !== p) });
 
-  const inSync =
-    schedule.times.length === 0 ||
-    schedule.times.every((t) => (schedule.registered ?? []).includes(t));
+  // One save for the whole page: the backend writes the config and registers
+  // the Windows tasks together, rolling both back if Task Scheduler refuses.
+  const save = async () => {
+    setSaving(true);
+    try {
+      // Merge with the latest cfg so a theme toggle made while this page was
+      // open is never rolled back by saving automation.
+      const payload: AppConfig = {
+        ...cfg,
+        times: draft.times,
+        instant: draft.instant,
+        instantDelay: draft.instantDelay,
+        sources: draft.sources,
+        minCluster: draft.minCluster,
+        minAgeSeconds: draft.minAgeSeconds,
+      };
+      const saved = (await api.SaveAutomation(
+        models.Config.createFrom(payload),
+      )) as unknown as AppConfig;
+      setDraft({ ...saved });
+      await onSaved();
+      const n = saved.times.length;
+      notify(
+        n === 0 && !saved.instant
+          ? 'Automation off — manual mode.'
+          : n === 0
+            ? 'Instant mode on. Daily schedule off.'
+            : `Saved · ${n} daily run${n > 1 ? 's' : ''} at ${saved.times.join(', ')}`,
+      );
+    } catch (e) {
+      // Show what Windows actually accepted instead of a phantom schedule.
+      try {
+        const actual = (await api.GetConfig()) as unknown as AppConfig;
+        setDraft({ ...actual });
+      } catch {
+        /* keep the draft so nothing typed is lost */
+      }
+      await onSaved();
+      notify('Could not save automation: ' + String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const registered = schedule.registered ?? [];
+  const tasksMatch =
+    schedule.times.length === registered.length &&
+    schedule.times.every((t) => registered.includes(t));
+  const watchOk = !schedule.instant || schedule.watchActive;
+  const stateLabel = dirty ? 'unsaved changes' : tasksMatch && watchOk ? 'in sync' : 'needs save';
+  const stateClass = stateLabel === 'in sync' ? 'pill' : 'pill warn';
   const watchNote = schedule.instant
     ? schedule.watchActive
       ? 'Watcher task active.'
@@ -106,16 +141,24 @@ export default function Scheduler({
   return (
     <div>
       <div className="row between" style={{ marginBottom: 14 }}>
-        {schedule.isAdmin ? (
-          <span className="pill">running as administrator</span>
-        ) : (
-          <span className="pill warn">standard user</span>
-        )}
-        {!schedule.isAdmin && (
-          <button className="btn small" onClick={restartAdmin}>
-            <Icon name="zap" size={15} /> Restart as administrator
+        <div className="row">
+          {schedule.isAdmin ? (
+            <span className="pill">running as administrator</span>
+          ) : (
+            <span className="pill warn">standard user</span>
+          )}
+          {!schedule.isAdmin && (
+            <button className="btn small" onClick={restartAdmin}>
+              <Icon name="zap" size={15} /> Restart as administrator
+            </button>
+          )}
+        </div>
+        <div className="row">
+          <span className={stateClass}>{stateLabel}</span>
+          <button className="btn primary" onClick={save} disabled={saving || !dirty}>
+            {saving ? <span className="spinner" /> : <Icon name="check" size={16} />} Save changes
           </button>
-        )}
+        </div>
       </div>
 
       <div className="card card-pad">
@@ -205,26 +248,17 @@ export default function Scheduler({
               className="input"
               type="number"
               min={10}
+              max={3600}
               value={draft.instantDelay}
               onChange={(e) => patch({ instantDelay: Number(e.target.value) })}
             />
           </div>
         </div>
-        <div className="row" style={{ marginTop: 18 }}>
-          <button className="btn primary" onClick={saveSchedule} disabled={saving}>
-            {saving ? <span className="spinner" /> : <Icon name="check" size={16} />} Save automation
-          </button>
-          {inSync && (!schedule.instant || schedule.watchActive) ? (
-            <span className="pill">in sync</span>
-          ) : (
-            <span className="pill warn">needs save</span>
-          )}
-          <span className="stat-hint">
-            {schedule.times.length > 0
-              ? `Runs daily at ${schedule.times.join(', ')}.`
-              : 'No daily times.'}{' '}
-            {watchNote}
-          </span>
+        <div className="stat-hint" style={{ marginTop: 14 }}>
+          {watchNote}{' '}
+          {schedule.times.length > 0
+            ? `Runs daily at ${schedule.times.join(', ')}.`
+            : 'No daily times.'}
         </div>
       </div>
 
@@ -233,7 +267,9 @@ export default function Scheduler({
         <span className="count">Downloads by default</span>
       </div>
       <div className="card card-pad">
-        {draft.sources.length === 0 && <div className="empty">No folders watched yet.</div>}
+        {draft.sources.length === 0 && (
+          <div className="empty">No folders watched — NEST will have nothing to sort.</div>
+        )}
         {draft.sources.map((s) => (
           <div className="folder-chip" key={s} style={{ marginBottom: 8 }}>
             <div className="icon-badge">
@@ -273,15 +309,20 @@ export default function Scheduler({
             className="input"
             type="number"
             min={0}
+            max={86400}
             value={draft.minAgeSeconds}
             onChange={(e) => patch({ minAgeSeconds: Number(e.target.value) })}
           />
         </div>
       </div>
+
       <div className="row" style={{ marginTop: 16 }}>
-        <button className="btn" onClick={saveSettings} disabled={saving}>
-          {saving ? <span className="spinner" /> : <Icon name="check" size={16} />} Save settings
+        <button className="btn" onClick={save} disabled={saving || !dirty}>
+          {saving ? <span className="spinner" /> : <Icon name="check" size={16} />} Save changes
         </button>
+        <span className="stat-hint">
+          Saves times, instant mode, folders, delay and smart rules together.
+        </span>
       </div>
 
       <div className="section-title">

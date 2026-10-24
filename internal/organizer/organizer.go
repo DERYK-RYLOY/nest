@@ -165,7 +165,9 @@ func Run(opts Options) Report {
 			continue
 		}
 
-		finalDest := filepath.Join(targetDir, pm.Name)
+		// Resolve collisions up front — also in preview — so the UI shows the
+		// exact name a file will get instead of promising an occupied one.
+		finalDest := uniqueDest(targetDir, pm.Name)
 		if opts.Apply {
 			if err := os.MkdirAll(targetDir, 0o755); err != nil {
 				pm.Err = err.Error()
@@ -173,7 +175,6 @@ func Run(opts Options) Report {
 				rep.Moves = append(rep.Moves, pm)
 				continue
 			}
-			finalDest = uniqueDest(targetDir, pm.Name)
 			if err := moveFile(c.path, finalDest); err != nil {
 				pm.Err = err.Error()
 				rep.Errors = append(rep.Errors, fmt.Sprintf("%s: %v", pm.Name, err))
@@ -274,16 +275,33 @@ func uniqueDest(dir, name string) string {
 	return dest
 }
 
+// moveFile relocates src to dst without ever replacing an existing file.
+// MoveFileEx is used without MOVEFILE_REPLACE_EXISTING, so if something has
+// appeared at dst since it was chosen the move fails instead of clobbering it.
+// COPY_ALLOWED keeps moves between volumes (or onto a share) working.
 func moveFile(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
+	from, err := windows.UTF16PtrFromString(src)
+	if err != nil {
+		return err
+	}
+	to, err := windows.UTF16PtrFromString(dst)
+	if err != nil {
+		return err
+	}
+	if err := windows.MoveFileEx(from, to, windows.MOVEFILE_COPY_ALLOWED); err == nil {
 		return nil
 	}
+
+	// Some file systems refuse MoveFileEx. Fall back to a copy, claiming the
+	// destination exclusively so this path cannot truncate an existing file
+	// either.
+	info, statErr := os.Stat(src)
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return err
 	}
@@ -293,7 +311,15 @@ func moveFile(src, dst string) error {
 		return err
 	}
 	if err := out.Close(); err != nil {
+		os.Remove(dst)
 		return err
 	}
-	return os.Remove(src)
+	if statErr == nil {
+		_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
+	}
+	if err := os.Remove(src); err != nil {
+		os.Remove(dst)
+		return err
+	}
+	return nil
 }

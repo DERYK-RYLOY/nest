@@ -35,8 +35,8 @@ export function RevealFile(arg1:string):Promise<void>;
 
 export function RunOrganize():Promise<Array<organizer.Report>>;
 
+export function SaveAutomation(arg1:config.Config):Promise<config.Config>;
+
 export function SaveConfig(arg1:config.Config):Promise<void>;
 
-export function SaveSchedule(arg1:Array<string>,arg2:boolean):Promise<void>;
-
-export function UndoLast():Promise<organizer.RunRecord>;
+export function UndoLast():Promise<organizer.UndoResult>;

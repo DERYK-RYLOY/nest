@@ -7,7 +7,7 @@
 <p align="center"><strong>The file organizer that cleans up, then disappears.</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-ff8a3d" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.2.0-ff8a3d" alt="version" />
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4" alt="platform" />
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/Wails-v2-2DD4BF" alt="Wails" />
@@ -46,6 +46,27 @@ One toast, and silence.
 - **Single ~13 MB portable EXE.** No installer. No runtime to install (Windows 10/11
   already ship WebView2).
 
+## 🆕 What's new in 1.2.0
+
+A hardening release — same tiny EXE, fewer ways to lose a file or a schedule.
+
+- **Undo covers the whole run.** One pass over several folders is now one undoable
+  action, and undo reports files it could not restore instead of claiming success.
+- **Nothing is ever overwritten, even on a race.** Moves claim the destination
+  exclusively (including cross-volume moves); a late file at that name is never replaced.
+- **Crash-safe settings and history.** `config.json` and `history.json` are written to a
+  temp file and renamed into place, so a power cut cannot leave half a JSON file.
+- **One Save for automation.** Times, instant mode, delay, folders and smart rules are
+  stored and registered with Task Scheduler together, and rolled back if Windows refuses.
+  Instant mode without admin now explains exactly what to do.
+- **Preview tells the truth.** Collisions show the final `file (1).zip` name, and the
+  reveal button points at the original file instead of a destination that does not exist yet.
+- **Empty folder list stays empty**, duplicate folders are ignored, rule targets are
+  validated, and folder arguments are checked before Explorer is opened.
+- **`nest --version` and `nest --help`** for headless diagnostics.
+- **Non-destructive test suite.** Task Scheduler and toast tests are opt-in with
+  `NEST_LIVE_TESTS=1`; the default run touches only temp folders.
+
 ## 🖥 How it looks
 
 Dark and light aurora-glass themes, one orange pouch, zero clutter:
@@ -59,7 +80,7 @@ Dark and light aurora-glass themes, one orange pouch, zero clutter:
 ## 🚀 Download
 
 Get the portable build from [**Releases**](https://github.com/DERYK-RYLOY/nest/releases):
-**`NEST-v1.1.0-win64.zip`** → unzip → double-click `nest.exe`. That's the whole install.
+**`NEST-v1.2.0-win64.zip`** → unzip → double-click `nest.exe`. That's the whole install.
 
 > Enabling the daily schedule works as a standard user. **Instant mode needs
 > administrator rights once** — the app offers a one-click *Restart as administrator*.
@@ -126,6 +147,10 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 wails build          # → build/bin/nest.exe
 go test ./internal/...   # safe: temp folders only, never your files
 ```
+
+Want the integration tests too? `NEST_LIVE_TESTS=1 go test ./internal/...` registers a
+real `NEST Auto 23:59` task and pushes a real toast, then restores the schedule and
+watcher state it found. The default run never touches Windows automation.
 
 ## ❓ FAQ
 

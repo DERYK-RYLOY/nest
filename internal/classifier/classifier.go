@@ -85,10 +85,14 @@ func init() {
 	}
 }
 
-// Categories returns a copy of the full registry for the UI.
+// Categories returns a copy of the full registry for the UI. The extension
+// slices are copied too, so a caller can never mutate the registry.
 func Categories() []Category {
 	out := make([]Category, len(registry))
-	copy(out, registry)
+	for i, c := range registry {
+		out[i] = c
+		out[i].Exts = append([]string(nil), c.Exts...)
+	}
 	return out
 }
 
@@ -122,10 +126,12 @@ func ResolvePath(path string) Destination {
 }
 
 // ResolveCustom applies a user rule: target is either a known-folder key or a
-// cluster folder name created inside the source.
+// cluster folder name created inside the source. Known-folder keys match
+// case-insensitively ("Pictures" and "pictures" mean the same folder).
 func ResolveCustom(ext, target string) Destination {
-	if name := knownfolders.NameOf(target); name != "" {
-		return Destination{Kind: "known", Category: name, Icon: "file-text", KnownKey: target}
+	target = strings.TrimSpace(target)
+	if name := knownfolders.NameOf(strings.ToLower(target)); name != "" {
+		return Destination{Kind: "known", Category: name, Icon: "file-text", KnownKey: strings.ToLower(target)}
 	}
 	name := strings.TrimPrefix(target, "_")
 	if name == "" {

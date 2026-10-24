@@ -6,6 +6,15 @@ import type { AppConfig, Category, CustomRule } from '../types';
 
 const KNOWN_TARGETS = ['pictures', 'videos', 'music', 'documents', 'downloads', 'desktop'];
 
+// Mirrors the backend sanitiser: a target is a known-folder key or one folder
+// name, never a path.
+function cleanTarget(raw: string): string {
+  const t = raw.trim().replace(/[\\/:*?"<>|]/g, '');
+  if (!t || t === '.' || t === '..' || t === '_') return '';
+  if (KNOWN_TARGETS.includes(t.toLowerCase())) return t.toLowerCase();
+  return t;
+}
+
 export default function Categories({
   categories,
   cfg,
@@ -29,8 +38,19 @@ export default function Categories({
   const addRule = () => {
     let e = ext.trim().toLowerCase();
     if (e && !e.startsWith('.')) e = '.' + e;
-    const t = target.trim();
-    if (e.length < 2 || !t || rules.some((r) => r.ext === e)) return;
+    if (e.length < 2 || e.includes('/') || e.includes('\\')) {
+      notify('Type an extension first, like .blend');
+      return;
+    }
+    const t = cleanTarget(target);
+    if (!t) {
+      notify('Give the rule a destination, like documents or _Blender');
+      return;
+    }
+    if (rules.some((r) => r.ext === e)) {
+      notify(`${e} already has a rule`);
+      return;
+    }
     setRules([...rules, { ext: e, target: t }]);
     setExt('');
     setTarget('');

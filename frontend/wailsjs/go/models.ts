@@ -308,6 +308,7 @@ export namespace organizer {
 	}
 	export class RunRecord {
 	    id: string;
+	    runId?: string;
 	    // Go type: time
 	    timestamp: any;
 	    source: string;
@@ -322,6 +323,7 @@ export namespace organizer {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.runId = source["runId"];
 	        this.timestamp = this.convertValues(source["timestamp"], null);
 	        this.source = source["source"];
 	        this.moves = this.convertValues(source["moves"], Move);
@@ -346,6 +348,26 @@ export namespace organizer {
 		    }
 		    return a;
 		}
+	}
+	export class UndoResult {
+	    runId: string;
+	    records: number;
+	    moves: number;
+	    bytes: number;
+	    missing: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UndoResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.records = source["records"];
+	        this.moves = source["moves"];
+	        this.bytes = source["bytes"];
+	        this.missing = source["missing"];
+	    }
 	}
 
 }

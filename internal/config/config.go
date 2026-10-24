@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"nest/internal/fsutil"
 	"nest/internal/knownfolders"
 )
 
@@ -98,14 +99,45 @@ func Load() Config {
 	return cfg
 }
 
+// Normalized returns a validated copy of the config with invalid values
+// repaired or removed.
+func (c Config) Normalized() Config {
+	c.normalize()
+	return c
+}
+
 // Save writes the config to disk atomically.
 func (c Config) Save() error {
-	c.normalize()
+	c = c.Normalized()
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(Path(), data, 0o644)
+	return fsutil.WriteFileAtomic(Path(), data, 0o644)
+}
+
+// SanitizeTarget cleans a rule destination. A target is either a known-folder
+// key (pictures, documents, ...) or a single folder name NEST creates inside
+// the source.
+func SanitizeTarget(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" || target == "." || target == ".." || target == "_" {
+		return ""
+	}
+	target = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return -1
+		}
+		return r
+	}, target)
+	if target == "" {
+		return ""
+	}
+	if knownfolders.NameOf(strings.ToLower(target)) != "" {
+		return strings.ToLower(target)
+	}
+	return target
 }
 
 func (c *Config) normalize() {
@@ -132,20 +164,47 @@ func (c *Config) normalize() {
 	}
 
 	if c.InstantDelay < 10 {
-		c.InstantDelay = 45
+		c.InstantDelay = 10
+	}
+	if c.InstantDelay > 3600 {
+		c.InstantDelay = 3600
 	}
 	if c.Theme != "light" && c.Theme != "dark" {
 		c.Theme = "dark"
 	}
+
+	// Sources: trim, absolutize and dedupe (Windows paths are case-insensitive).
+	// An empty list stays empty — the user may deliberately watch nothing.
+	seenSrc := map[string]bool{}
+	sources := make([]string, 0, len(c.Sources))
+	for _, s := range c.Sources {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(s); err == nil {
+			s = abs
+		}
+		s = filepath.Clean(s)
+		key := strings.ToLower(s)
+		if seenSrc[key] {
+			continue
+		}
+		seenSrc[key] = true
+		sources = append(sources, s)
+	}
+	c.Sources = sources
+
 	clean := make([]CustomRule, 0, len(c.CustomRules))
 	for _, r := range c.CustomRules {
 		ext := strings.ToLower(strings.TrimSpace(r.Ext))
+		if ext == "" || strings.ContainsAny(ext, `\/:`) {
+			continue
+		}
 		if !strings.HasPrefix(ext, ".") {
 			ext = "." + ext
 		}
-		target := strings.TrimSpace(r.Target)
-		target = strings.ReplaceAll(target, "/", "")
-		target = strings.ReplaceAll(target, "\\", "")
+		target := SanitizeTarget(r.Target)
 		if len(ext) < 2 || target == "" {
 			continue
 		}
@@ -153,6 +212,7 @@ func (c *Config) normalize() {
 		for _, c2 := range clean {
 			if c2.Ext == ext {
 				dup = true
+				break
 			}
 		}
 		if !dup {
@@ -167,9 +227,7 @@ func (c *Config) normalize() {
 	if c.MinAgeSeconds < 0 {
 		c.MinAgeSeconds = 60
 	}
-	if len(c.Sources) == 0 {
-		if dl := knownfolders.Downloads(); dl != "" {
-			c.Sources = []string{dl}
-		}
+	if c.MinAgeSeconds > 86400 {
+		c.MinAgeSeconds = 86400
 	}
 }

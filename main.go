@@ -30,6 +30,16 @@ func main() {
 		case "--watch":
 			runWatch()
 			return
+		case "--version", "-v":
+			fmt.Printf("NEST %s\n", AppVersion)
+			return
+		case "--help", "-h":
+			fmt.Println("NEST — the file organizer that cleans up, then disappears.\n\n" +
+				"  nest            open the app\n" +
+				"  nest --auto     organize every watched folder once (daily tasks)\n" +
+				"  nest --watch    organize files as they arrive (logon task)\n" +
+				"  nest --version  print the version")
+			return
 		}
 	}
 
@@ -66,6 +76,8 @@ func runAuto() {
 	if moved, _ := engine.Totals(reports); moved > 0 {
 		fmt.Printf("NEST: organized %d file(s)\n", moved)
 		_ = notify.Organized(moved, len(cfg.Sources))
+	} else if errs := engine.Errors(reports); len(errs) > 0 {
+		fmt.Printf("NEST: nothing organized, %d error(s): %s\n", len(errs), errs[0])
 	} else {
 		fmt.Println("NEST: nothing to organize")
 	}
@@ -92,6 +104,8 @@ func runWatch() {
 		if moved, _ := engine.Totals(reports); moved > 0 {
 			fmt.Printf("NEST: organized %d new file(s)\n", moved)
 			_ = notify.Organized(moved, len(cfg.Sources))
+		} else if errs := engine.Errors(reports); len(errs) > 0 {
+			fmt.Printf("NEST: nothing organized, %d error(s): %s\n", len(errs), errs[0])
 		}
 	})
 }

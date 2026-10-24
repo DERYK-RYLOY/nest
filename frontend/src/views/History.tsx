@@ -17,6 +17,13 @@ export default function History({
   const [open, setOpen] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const lastUndoable = history.find((h) => !h.undone);
+  const lastRunKey = lastUndoable ? lastUndoable.runId || lastUndoable.id : '';
+  // One run may span several folders; undo reverts all of them.
+  const lastCount = lastUndoable
+    ? history
+        .filter((h) => !h.undone && (h.runId || h.id) === lastRunKey)
+        .reduce((n, h) => n + h.moves.length, 0)
+    : 0;
 
   const askClear = () => {
     if (confirming) {
@@ -37,7 +44,7 @@ export default function History({
       <div className="row between" style={{ marginBottom: 16 }}>
         <div className="stat-hint">
           {lastUndoable
-            ? `Last run moved ${lastUndoable.moves.length} file(s). You can put them all back.`
+            ? `Last run moved ${lastCount} file(s). You can put them all back.`
             : 'Clearing wipes the log and resets the stats.'}
         </div>
         <div className="row">

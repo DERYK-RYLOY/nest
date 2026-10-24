@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -17,7 +18,7 @@ import (
 
 const (
 	// AppVersion is shown in the About card.
-	AppVersion = "1.1.0"
+	AppVersion = "1.2.0"
 	// AppAuthor must stay credited wherever NEST is presented.
 	AppAuthor = "DERYK RYLOY"
 )
@@ -63,24 +64,27 @@ func (a *App) GetDashboard() Dashboard {
 	cfg := config.Load()
 
 	history := organizer.LoadHistory()
-	var last *organizer.RunRecord
-	if len(history) > 0 {
-		last = &history[0]
-	}
-
 	d := Dashboard{
 		Sources:      cfg.Sources,
 		KnownFolders: knownfolders.All(),
 		Categories:   classifier.Categories(),
 		Schedule:     currentSchedule(cfg),
-		LastRun:      last,
+		LastRun:      organizer.LatestRun(history),
 		TotalBytes:   organizer.TotalBytes(),
 		RunCount:     len(history),
 		ConfigPath:   config.Path(),
 	}
-	if len(cfg.Sources) > 0 {
-		if entries, err := os.ReadDir(cfg.Sources[0]); err == nil {
-			d.DownloadsCount = len(entries)
+	// "In source" counts loose files across every watched folder, not the
+	// cluster folders NEST created.
+	for _, src := range cfg.Sources {
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				d.DownloadsCount++
+			}
 		}
 	}
 	return d
@@ -129,9 +133,16 @@ func (a *App) GetConfig() config.Config {
 	return config.Load()
 }
 
-// SaveConfig persists sources, rules and theme. It never touches the
-// scheduled tasks; use SaveSchedule for automation.
+// SaveConfig persists sources, rules and theme. Automation fields are owned by
+// SaveAutomation and are copied from the stored config, so this method can
+// never desync Windows Task Scheduler.
 func (a *App) SaveConfig(cfg config.Config) error {
+	current := config.Load()
+	cfg.Times = current.Times
+	cfg.Enabled = current.Enabled
+	cfg.ScheduleTime = current.ScheduleTime
+	cfg.Instant = current.Instant
+	cfg.InstantDelay = current.InstantDelay
 	return cfg.Save()
 }
 
@@ -140,19 +151,47 @@ func (a *App) GetSchedule() scheduler.Status {
 	return currentSchedule(config.Load())
 }
 
-// SaveSchedule stores the daily times and instant mode, then syncs the
-// Windows Task Scheduler entries to match.
-func (a *App) SaveSchedule(times []string, instant bool) error {
-	cfg := config.Load()
-	cfg.Times = times
-	cfg.Instant = instant
-	if err := cfg.Save(); err != nil {
-		return err
+// SaveAutomation persists the whole automation page (times, instant mode,
+// delay, folders and smart rules) and then syncs Windows Task Scheduler. If
+// Windows refuses — typically instant mode without elevation — the previous
+// config and tasks are restored so the UI never claims automation that is not
+// actually registered.
+func (a *App) SaveAutomation(cfg config.Config) (config.Config, error) {
+	prev := config.Load()
+	next := cfg.Normalized()
+
+	if err := next.Save(); err != nil {
+		return prev, err
 	}
-	if err := scheduler.Sync(cfg.Times); err != nil {
-		return err
+	if err := scheduler.Sync(next.Times); err != nil {
+		rollback(prev)
+		return prev, err
 	}
-	return scheduler.SetWatch(cfg.Instant)
+	// Recreating an already-correct logon task would need elevation for no
+	// reason, so only touch it when the state changed or it went missing.
+	if next.Instant != prev.Instant || (next.Instant && !scheduler.WatchActive()) {
+		if err := scheduler.SetWatch(next.Instant); err != nil {
+			rollback(prev)
+			if next.Instant {
+				return prev, fmt.Errorf("instant mode could not be registered (%v) — restart NEST as administrator once, then save again", err)
+			}
+			return prev, err
+		}
+	}
+	if next.Instant {
+		// A logon task does not pick up new folders or delays by itself, so
+		// restart the watcher to make the saved settings live immediately.
+		scheduler.RestartWatch()
+	}
+	return next, nil
+}
+
+// rollback restores the on-disk config and the scheduled tasks after a failed
+// save.
+func rollback(prev config.Config) {
+	_ = prev.Save()
+	_ = scheduler.Sync(prev.Times)
+	_ = scheduler.SetWatch(prev.Instant)
 }
 
 // GetCategories returns the classifier registry.
@@ -170,9 +209,11 @@ func (a *App) PreviewOrganize() []organizer.Report {
 	return engine.RunAll(config.Load(), false)
 }
 
-// RunOrganize applies the moves and records undoable history entries.
+// RunOrganize applies the moves and records undoable history entries. The UI
+// does a single pass: the user is present and sees which downloads are still
+// in progress, so there is no reason to freeze the window for a minute.
 func (a *App) RunOrganize() []organizer.Report {
-	return engine.RunSettled(config.Load(), true)
+	return engine.RunAll(config.Load(), true)
 }
 
 // GetHistory returns previous runs, newest first.
@@ -180,8 +221,8 @@ func (a *App) GetHistory() []organizer.RunRecord {
 	return organizer.LoadHistory()
 }
 
-// UndoLast reverts the most recent run.
-func (a *App) UndoLast() (organizer.RunRecord, error) {
+// UndoLast reverts the most recent run across every source it touched.
+func (a *App) UndoLast() (organizer.UndoResult, error) {
 	return organizer.UndoLast()
 }
 
@@ -199,5 +240,11 @@ func (a *App) PickFolder() (string, error) {
 
 // OpenFolder reveals a path in File Explorer.
 func (a *App) OpenFolder(path string) error {
+	if path == "" {
+		return fmt.Errorf("no folder selected")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
 	return exec.Command("explorer", path).Start()
 }
