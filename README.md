@@ -43,8 +43,9 @@ One toast, and silence.
 - **Preview before anything moves**, full **history with one-click undo** and
   **Clear history** that resets every stat.
 - **Reveal in Explorer**, per-category stats, dark + light glass themes.
-- **Single ~13 MB portable EXE.** No installer. No runtime to install (Windows 10/11
-  already ship WebView2).
+- **Install it or carry it.** A polished per-user Windows installer — no admin prompt,
+  Start Menu + optional desktop shortcuts, proper uninstaller — or a single ~13 MB
+  portable EXE. No runtime to install (Windows 10/11 already ship WebView2).
 
 ## 🆕 What's new in 1.2.0
 
@@ -64,6 +65,8 @@ A hardening release — same tiny EXE, fewer ways to lose a file or a schedule.
 - **Empty folder list stays empty**, duplicate folders are ignored, rule targets are
   validated, and folder arguments are checked before Explorer is opened.
 - **`nest --version` and `nest --help`** for headless diagnostics.
+- **A real Windows installer.** A branded NSIS wizard installs for the current user,
+  adds shortcuts and an Add/Remove Programs entry, and uninstalls cleanly.
 - **Non-destructive test suite.** Task Scheduler and toast tests are opt-in with
   `NEST_LIVE_TESTS=1`; the default run touches only temp folders.
 
@@ -79,11 +82,26 @@ Dark and light aurora-glass themes, one orange pouch, zero clutter:
 
 ## 🚀 Download
 
-Get the portable build from [**Releases**](https://github.com/DERYK-RYLOY/nest/releases):
-**`NEST-v1.2.0-win64.zip`** → unzip → double-click `nest.exe`. That's the whole install.
+Get the latest build from [**Releases**](https://github.com/DERYK-RYLOY/nest/releases).
+
+### Windows installer (recommended)
+
+**`NEST-v1.2.0-win64-installer.exe`** — run it and follow the wizard.
+
+- Installs for the **current user** — no administrator prompt.
+- Start Menu shortcut, optional desktop shortcut, and a proper entry under
+  **Settings → Apps** with a working uninstaller.
+- Keeps your settings on reinstall; the uninstaller asks before removing them.
+- Checks for 64-bit Windows 10/11 and the WebView2 runtime before installing.
+
+### Portable
+
+**`NEST-v1.2.0-win64.zip`** → unzip → double-click `nest.exe`. No install, no registry,
+no shortcuts; delete the folder when you're done.
 
 > Enabling the daily schedule works as a standard user. **Instant mode needs
 > administrator rights once** — the app offers a one-click *Restart as administrator*.
+> The installer and EXE are unsigned, so SmartScreen may ask once for confirmation.
 
 ## 📖 Usage
 
@@ -119,7 +137,7 @@ Like a real shipping desktop product, NEST is a thin, dependency-light stack:
 | UI | **React 19 + TypeScript + Vite** | dashboard, code-split views |
 | Design | hand-built CSS glass system | complementary teal/orange scale, dark + light |
 | Tests | `go test` (temp-dir only) | organizer, watcher, scheduler, toasts |
-| Shipping | `wails build` + GitHub Releases | portable ZIP, no installer |
+| Shipping | `wails build` + NSIS + GitHub Releases | portable ZIP and a branded per-user installer |
 
 Project layout:
 
